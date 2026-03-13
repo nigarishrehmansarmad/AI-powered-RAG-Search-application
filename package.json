@@ -1,0 +1,36 @@
+{
+  "name": "rag-search-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "biome check",
+    "format": "biome format --write"
+  },
+  "dependencies": {
+    "@langchain/openai": "^1.2.13",
+    "@langchain/textsplitters": "^1.0.1",
+    "@supabase/supabase-js": "^2.99.1",
+    "langchain": "^1.2.32",
+    "mammoth": "^1.12.0",
+    "next": "16.1.6",
+    "ollama": "^0.6.3",
+    "openai": "^6.27.0",
+    "pdf2json": "^4.0.2",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.2.0",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
