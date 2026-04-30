@@ -11,7 +11,6 @@ interface Document {
   file_size: number;
   upload_date: string;
   total_chunks: number;
-  file_url?: string;
   file_path?: string;
 }
 
@@ -175,10 +174,7 @@ export default function DocumentsPage() {
                           {doc.file_name.toLowerCase().endsWith('.pdf') ? (
                             <button 
                               onClick={() => {
-                                const pdfUrl = doc.file_url 
-                                  ? `${doc.file_url}?view=true` 
-                                  : `/api/documents?id=${doc.id}&file=true&view=true`;
-                                setSelectedPDF({ url: pdfUrl, name: doc.file_name, id: doc.id });
+                                setSelectedPDF({ url: `/api/documents?id=${doc.id}&file=true&view=true`, name: doc.file_name, id: doc.id });
                                 setShowPDFModal(true);
                               }} 
                               className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
@@ -190,7 +186,7 @@ export default function DocumentsPage() {
                               <button 
                                 onClick={() => {
                                   setSelectedPDF({ 
-                                    url: doc.file_url || `/api/documents?id=${doc.id}&file=true`, 
+                                    url: `/api/documents?id=${doc.id}&file=true`, 
                                     name: doc.file_name, 
                                     id: doc.id, 
                                     isPDF: false 
@@ -199,9 +195,9 @@ export default function DocumentsPage() {
                                 }} 
                                 className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                               >
-                                View
+                              {doc.file_path && (
                               </button>
-                              {(doc.file_url || doc.file_path) && (
+                                  href={`/api/documents?id=${doc.id}&file=true`} 
                                 <a 
                                   href={doc.file_url || `/api/documents?id=${doc.id}&file=true`} 
                                   download={doc.file_name}

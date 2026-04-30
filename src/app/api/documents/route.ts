@@ -1,14 +1,51 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import {
+  checkRateLimit,
+  getRequiredEnv,
+  isAuthenticatedRequest,
+  isValidDocumentId,
+  sanitizeFileName,
+  safeErrorMessage,
+} from '@/lib/security';
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || anonKey;
-const supabase = createClient(url, anonKey);
+type DocumentMetadata = {
+  document_id?: string;
+  file_name?: string;
+  file_type?: string;
+  file_size?: number;
+  upload_date?: string;
+  total_chunks?: number;
+  file_path?: string;
+};
+
+type DocumentChunk = {
+  content: string;
+  metadata: DocumentMetadata;
+};
+
+const url = getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL');
+const serviceKey = getRequiredEnv('SUPABASE_SERVICE_ROLE_KEY');
+const supabase = createClient(url, serviceKey);
 const supabaseStorage = createClient(url, serviceKey);
 
 export async function GET(req: Request) {
   try {
+    if (!isAuthenticatedRequest(req)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const rateLimit = checkRateLimit(req, 'documents-get', 30, 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        {
+          status: 429,
+          headers: rateLimit.retryAfterSeconds ? { 'Retry-After': String(rateLimit.retryAfterSeconds) } : undefined,
+        },
+      );
+    }
+
     const reqUrl = new URL(req.url);
     const id = reqUrl.searchParams.get('id');
     const file = reqUrl.searchParams.get('file') === 'true';
@@ -16,6 +53,10 @@ export async function GET(req: Request) {
 
     // Handle file download/view
     if (id && file) {
+      if (!isValidDocumentId(id)) {
+        return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+      }
+
       const { data: documents } = await supabase
         .from('documents')
         .select('metadata')
@@ -27,7 +68,7 @@ export async function GET(req: Request) {
       }
 
       const meta = documents[0].metadata;
-      const fileName = meta?.file_name || 'document';
+  const fileName = sanitizeFileName(meta?.file_name || 'document');
       const fileType = meta?.file_type || 'application/octet-stream';
       const filePath = meta?.file_path || `${id}.${fileName.split('.').pop() || 'pdf'}`;
 
@@ -54,13 +95,17 @@ export async function GET(req: Request) {
             ? `inline; filename="${fileName}"` 
             : `attachment; filename="${fileName}"`,
           'Content-Length': buffer.length.toString(),
-          ...(view && isPDF ? { 'X-Content-Type-Options': 'nosniff' } : {}),
+          'X-Content-Type-Options': 'nosniff',
         },
       });
     }
 
     // Get single document with text content
     if (id) {
+      if (!isValidDocumentId(id)) {
+        return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+      }
+
       const { data: chunks, error } = await supabase
         .from('documents')
         .select('content, metadata')
@@ -78,8 +123,7 @@ export async function GET(req: Request) {
         file_size: m.file_size || 0,
         upload_date: m.upload_date || new Date().toISOString(),
         total_chunks: chunks.length,
-        fullText: chunks.map((c: any) => c.content).join('\n\n'),
-        file_url: m.file_url,
+        fullText: (chunks as DocumentChunk[]).map((chunk) => chunk.content).join('\n\n'),
         file_path: m.file_path
       });
     }
@@ -90,13 +134,14 @@ export async function GET(req: Request) {
       .select('metadata');
 
     if (listError) {
-      return NextResponse.json({ error: listError.message }, { status: 500 });
+      console.error('Failed to list documents', listError);
+      return NextResponse.json({ error: 'Failed to list documents' }, { status: 500 });
     }
 
     // Deduplicate documents by document_id
     // Since each document is split into multiple chunks, we need to group them
-    const map = new Map();
-    documents?.forEach((doc: any) => {
+    const map = new Map<string, DocumentMetadata & { id: string }>();
+    documents?.forEach((doc: { metadata: DocumentMetadata }) => {
       const m = doc.metadata;
       if (m?.document_id && !map.has(m.document_id)) {
         map.set(m.document_id, {
@@ -106,23 +151,42 @@ export async function GET(req: Request) {
           file_size: m.file_size || 0,
           upload_date: m.upload_date || new Date().toISOString(),
           total_chunks: m.total_chunks || 0,
-          file_url: m.file_url,
           file_path: m.file_path,
         });
       }
     });
 
     return NextResponse.json({ documents: Array.from(map.values()) });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Document GET failed', error);
+    return NextResponse.json({ error: safeErrorMessage('Failed to load documents') }, { status: 500 });
   }
 }
 
 export async function DELETE(req: Request) {
   try {
+    if (!isAuthenticatedRequest(req)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const rateLimit = checkRateLimit(req, 'documents-delete', 10, 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        {
+          status: 429,
+          headers: rateLimit.retryAfterSeconds ? { 'Retry-After': String(rateLimit.retryAfterSeconds) } : undefined,
+        },
+      );
+    }
+
     const id = new URL(req.url).searchParams.get('id');
     if (!id) {
       return NextResponse.json({ error: 'Document ID required' }, { status: 400 });
+    }
+
+    if (!isValidDocumentId(id)) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
     // Get file path from metadata
@@ -146,11 +210,13 @@ export async function DELETE(req: Request) {
       .eq('metadata->>document_id', id);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('Failed to delete document', error);
+      return NextResponse.json({ error: 'Failed to delete document' }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, fileDeleted: !!filePath });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Document DELETE failed', error);
+    return NextResponse.json({ error: safeErrorMessage('Failed to delete document') }, { status: 500 });
   }
 }

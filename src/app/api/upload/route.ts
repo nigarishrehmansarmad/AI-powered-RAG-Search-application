@@ -3,12 +3,44 @@ import { Ollama } from 'ollama';
 import { NextResponse } from 'next/server';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import mammoth from 'mammoth';
+import {
+  checkRateLimit,
+  ensureChunkCountWithinLimit,
+  ensureTextWithinLimit,
+  getMaxUploadSizeBytes,
+  getRequiredEnv,
+  isAuthenticatedRequest,
+  sanitizeFileName,
+  safeErrorMessage,
+  validateUploadedFile,
+} from '@/lib/security';
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseStorage = createClient(url, serviceKey || anonKey);
-const supabase = createClient(url, anonKey);
+type PdfParserData = {
+  Pages?: Array<{
+    Texts?: Array<{
+      R?: Array<{
+        T?: string;
+      }>;
+    }>;
+  }>;
+};
+
+type PdfParserError = {
+  parserError?: string;
+};
+
+type PdfParserInstance = {
+  on(event: 'pdfParser_dataError', handler: (err: PdfParserError) => void): void;
+  on(event: 'pdfParser_dataReady', handler: (data: PdfParserData) => void): void;
+  parseBuffer(buffer: Buffer): void;
+};
+
+type PdfParserConstructor = new (options: unknown, parseOneFile: boolean) => PdfParserInstance;
+
+const url = getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL');
+const serviceKey = getRequiredEnv('SUPABASE_SERVICE_ROLE_KEY');
+const supabaseStorage = createClient(url, serviceKey);
+const supabase = createClient(url, serviceKey);
 
 // Initialize Ollama
 const ollama = new Ollama({
@@ -27,23 +59,22 @@ function safeDecodeURIComponent(str: string): string {
   }
 }
 
-async function extractTextFromFile(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const fileName = file.name.toLowerCase();
+async function extractTextFromBuffer(buffer: Buffer, fileName: string): Promise<string> {
+  const lowerFileName = fileName.toLowerCase();
 
-  if (fileName.endsWith('.pdf')) {
+  if (lowerFileName.endsWith('.pdf')) {
     const PDFParser = (await import('pdf2json')).default;
     return new Promise((resolve, reject) => {
-      const pdfParser = new (PDFParser as any)(null, true);
-      pdfParser.on('pdfParser_dataError', (err: any) => 
+      const pdfParser = new (PDFParser as PdfParserConstructor)(null, true);
+      pdfParser.on('pdfParser_dataError', (err) => 
         reject(new Error(`PDF parsing error: ${err.parserError}`))
       );
-      pdfParser.on('pdfParser_dataReady', (pdfData: any) => {
+      pdfParser.on('pdfParser_dataReady', (pdfData) => {
         try {
           let fullText = '';
-          pdfData.Pages?.forEach((page: any) => 
-            page.Texts?.forEach((text: any) => 
-              text.R?.forEach((r: any) => 
+          pdfData.Pages?.forEach((page) => 
+            page.Texts?.forEach((text) => 
+              text.R?.forEach((r) => 
                 r.T && (fullText += safeDecodeURIComponent(r.T) + ' ')
               )
             )
@@ -55,10 +86,10 @@ async function extractTextFromFile(file: File): Promise<string> {
       });
       pdfParser.parseBuffer(buffer);
     });
-  } else if (fileName.endsWith('.docx')) {
+  } else if (lowerFileName.endsWith('.docx')) {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
-  } else if (fileName.endsWith('.txt')) {
+  } else if (lowerFileName.endsWith('.txt')) {
     return buffer.toString('utf-8');
   } else {
     throw new Error('Unsupported file type. Please upload PDF, DOCX, or TXT files.');
@@ -67,17 +98,52 @@ async function extractTextFromFile(file: File): Promise<string> {
 
 export async function POST(req: Request) {
   try {
+    if (!isAuthenticatedRequest(req)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const rateLimit = checkRateLimit(req, 'upload', 3, 10 * 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many uploads. Please try again later.' },
+        {
+          status: 429,
+          headers: rateLimit.retryAfterSeconds ? { 'Retry-After': String(rateLimit.retryAfterSeconds) } : undefined,
+        },
+      );
+    }
+
     const file = (await req.formData()).get('file') as File;
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
+    if (file.size > getMaxUploadSizeBytes()) {
+      return NextResponse.json({ error: 'File is too large' }, { status: 413 });
+    }
+
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const validatedType = validateUploadedFile(file.name, fileBuffer);
+    const safeFileName = sanitizeFileName(file.name);
+
+    const text = await extractTextFromBuffer(fileBuffer, file.name);
+    const normalizedText = ensureTextWithinLimit(text.trim());
+    if (!normalizedText) {
+      return NextResponse.json({ error: 'Could not extract text from file' }, { status: 400 });
+    }
+
+    const textSplitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 800,
+      chunkOverlap: 100,
+    });
+    const chunks = await textSplitter.splitText(normalizedText);
+    ensureChunkCountWithinLimit(chunks.length);
+
     const documentId = crypto.randomUUID();
     const uploadDate = new Date().toISOString();
-    const filePath = `${documentId}.${file.name.split('.').pop() || 'bin'}`;
+    const filePath = `${documentId}.${validatedType}`;
 
     // Upload file to Supabase Storage
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
     const { error: storageError } = await supabaseStorage.storage
       .from('documents')
       .upload(filePath, fileBuffer, {
@@ -86,38 +152,9 @@ export async function POST(req: Request) {
       });
 
     if (storageError) {
-      const msg = storageError.message || 'Unknown storage error';
-      if (msg.includes('row-level security') || msg.includes('RLS')) {
-        return NextResponse.json({ 
-          success: false, 
-          error: `Storage RLS error: ${msg}. Ensure SUPABASE_SERVICE_ROLE_KEY is set.` 
-        }, { status: 500 });
-      }
-      return NextResponse.json({ 
-        success: false, 
-        error: `Failed to store file: ${msg}` 
-      }, { status: 500 });
+      console.error('Failed to store file', storageError);
+      return NextResponse.json({ success: false, error: 'Failed to store file' }, { status: 500 });
     }
-
-    // Get public URL for the file
-    const { data: urlData } = supabaseStorage.storage
-      .from('documents')
-      .getPublicUrl(filePath);
-
-    // Extract text from file
-    const text = await extractTextFromFile(file);
-    if (!text || text.trim().length === 0) {
-      return NextResponse.json({ 
-        error: 'Could not extract text from file' 
-      }, { status: 400 });
-    }
-
-    // Split text into chunks
-    const textSplitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 800,
-      chunkOverlap: 100,
-    });
-    const chunks = await textSplitter.splitText(text);
 
     // Process each chunk: generate embedding and store in database
     for (let i = 0; i < chunks.length; i++) {
@@ -134,40 +171,35 @@ export async function POST(req: Request) {
       const { error } = await supabase.from('documents').insert({
         content: chunk,
         metadata: { 
-          source: file.name,
+          source: safeFileName,
           document_id: documentId,
-          file_name: file.name,
-          file_type: file.type || file.name.split('.').pop(),
+          file_name: safeFileName,
+          file_type: validatedType,
           file_size: file.size,
           upload_date: uploadDate,
           chunk_index: i,
           total_chunks: chunks.length,
           file_path: filePath,
-          file_url: urlData.publicUrl,
         },
         embedding: JSON.stringify(embeddingResponse.embedding),
       });
 
       if (error) {
-        return NextResponse.json({ 
-          success: false, 
-          error: error.message 
-        }, { status: 500 });
+        console.error('Failed to store document chunk', error);
+        await supabaseStorage.storage.from('documents').remove([filePath]);
+        return NextResponse.json({ success: false, error: 'Failed to store document' }, { status: 500 });
       }
     }
 
     return NextResponse.json({ 
       success: true, 
       documentId, 
-      fileName: file.name, 
+      fileName: safeFileName, 
       chunks: chunks.length, 
-      textLength: text.length, 
-      fileUrl: urlData.publicUrl 
+      textLength: normalizedText.length 
     });
-  } catch (error: any) {
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message || 'Failed to process file' 
-    }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Upload processing failed', error);
+    return NextResponse.json({ success: false, error: safeErrorMessage('Failed to process file') }, { status: 500 });
   }
 }
