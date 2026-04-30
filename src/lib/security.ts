@@ -107,7 +107,7 @@ export function validateUploadedFile(
     throw new Error("Invalid TXT file.");
   }
 
-  return extension;
+  return extension as "pdf" | "docx" | "txt";
 }
 
 export function isValidDocumentId(

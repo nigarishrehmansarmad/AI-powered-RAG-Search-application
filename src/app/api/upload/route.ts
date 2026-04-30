@@ -1,8 +1,12 @@
-import { createClient } from "@supabase/supabase-js";
-import { Ollama } from "ollama";
-import { NextResponse } from "next/server";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import { createClient } from "@supabase/supabase-js";
 import mammoth from "mammoth";
+import { NextResponse } from "next/server";
+import {
+  classifyDocument,
+  generateEmbedding,
+  summarizeDocument,
+} from "@/lib/ollama";
 import {
   checkRateLimit,
   ensureChunkCountWithinLimit,
@@ -10,8 +14,8 @@ import {
   getMaxUploadSizeBytes,
   getRequiredEnv,
   isAuthenticatedRequest,
-  sanitizeFileName,
   safeErrorMessage,
+  sanitizeFileName,
   validateUploadedFile,
 } from "@/lib/security";
 
@@ -50,11 +54,6 @@ const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
 const serviceKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
 const supabaseStorage = createClient(url, serviceKey);
 const supabase = createClient(url, serviceKey);
-
-// Initialize Ollama
-const ollama = new Ollama({
-  host: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
-});
 
 function safeDecodeURIComponent(str: string): string {
   try {
@@ -157,6 +156,17 @@ export async function POST(req: Request) {
       );
     }
 
+    // Classify and summarize the document before chunking
+    const classification = await classifyDocument(normalizedText).catch((e) => {
+      console.error("Classification failed", e);
+      return "Other";
+    });
+
+    const summary = await summarizeDocument(normalizedText).catch((e) => {
+      console.error("Summarization failed", e);
+      return "";
+    });
+
     const textSplitter = new RecursiveCharacterTextSplitter({
       chunkSize: 800,
       chunkOverlap: 100,
@@ -188,14 +198,10 @@ export async function POST(req: Request) {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
 
-      // Generate embedding using Ollama
-      // nomic-embed-text produces 768-dimensional vectors
-      const embeddingResponse = await ollama.embeddings({
-        model: "nomic-embed-text",
-        prompt: chunk,
-      });
+      // Generate embedding using the shared helper
+      const embedding = await generateEmbedding(chunk);
 
-      // Store chunk with embedding in database
+      // Store chunk with embedding and derived metadata in database
       const { error } = await supabase.from("documents").insert({
         content: chunk,
         metadata: {
@@ -208,8 +214,10 @@ export async function POST(req: Request) {
           chunk_index: i,
           total_chunks: chunks.length,
           file_path: filePath,
+          classification,
+          summary,
         },
-        embedding: JSON.stringify(embeddingResponse.embedding),
+        embedding: JSON.stringify(embedding),
       });
 
       if (error) {
@@ -228,6 +236,8 @@ export async function POST(req: Request) {
       fileName: safeFileName,
       chunks: chunks.length,
       textLength: normalizedText.length,
+      classification,
+      summary,
     });
   } catch (error: unknown) {
     console.error("Upload processing failed", error);

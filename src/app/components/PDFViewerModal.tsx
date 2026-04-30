@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useState } from "react";
 
 interface PDFViewerModalProps {
@@ -34,10 +35,39 @@ export default function PDFViewerModal({
       setText("");
       setTextError(null);
     }
+
     return () => {
       document.body.style.overflow = "unset";
     };
   }, [isOpen, isPDF]);
+
+  useEffect(() => {
+    if (isOpen && fileUrl && isPDF) {
+      fetch(fileUrl, { method: "GET", headers: { Accept: "application/json" } })
+        .then(async (res) => {
+          if (res.headers.get("content-type")?.includes("application/json")) {
+            const data = await res.json();
+            throw new Error(data.error || "File not available");
+          }
+
+          if (!res.ok) {
+            throw new Error(`Failed to load: ${res.status}`);
+          }
+
+          setLoading(false);
+        })
+        .catch((loadError) => {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Failed to load PDF",
+          );
+          setLoading(false);
+        });
+    } else if (isOpen && !isPDF) {
+      setLoading(false);
+    }
+  }, [isOpen, fileUrl, isPDF]);
 
   useEffect(() => {
     if (
@@ -48,62 +78,53 @@ export default function PDFViewerModal({
       !textLoading &&
       !textError
     ) {
-      fetchDocumentText();
+      const fetchDocumentText = async () => {
+        setTextLoading(true);
+        setTextError(null);
+
+        try {
+          const res = await fetch(`/api/documents?id=${documentId}`);
+          const data = await res.json();
+          if (data.error) {
+            setTextError(data.error);
+          } else {
+            setText(data.fullText || "No text content available");
+          }
+        } catch (fetchError) {
+          setTextError(
+            fetchError instanceof Error
+              ? fetchError.message
+              : "Failed to fetch document text",
+          );
+        } finally {
+          setTextLoading(false);
+        }
+      };
+
+      void fetchDocumentText();
     }
   }, [isOpen, documentId, activeTab, text, textLoading, textError]);
-
-  useEffect(() => {
-    if (isOpen && fileUrl && isPDF) {
-      fetch(fileUrl, { method: "GET", headers: { Accept: "application/json" } })
-        .then(async (res) => {
-          if (res.headers.get("content-type")?.includes("application/json")) {
-            const data = await res.json();
-            throw new Error(data.error || "File not available");
-          }
-          if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
-          setLoading(false);
-        })
-        .catch((err) => {
-          setError(err.message || "Failed to load PDF");
-          setLoading(false);
-        });
-    } else if (isOpen && !isPDF) {
-      setLoading(false);
-    }
-  }, [isOpen, fileUrl, isPDF]);
-
-  const fetchDocumentText = async () => {
-    if (!documentId) return;
-    setTextLoading(true);
-    setTextError(null);
-    try {
-      const res = await fetch(`/api/documents?id=${documentId}`);
-      const data = await res.json();
-      if (data.error) {
-        setTextError(data.error);
-      } else {
-        setText(data.fullText || "No text content available");
-      }
-    } catch (err) {
-      setTextError(
-        err instanceof Error ? err.message : "Failed to fetch document text",
-      );
-    } finally {
-      setTextLoading(false);
-    }
-  };
 
   if (!isOpen) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
-      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      tabIndex={-1}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          onClose();
+        }
+      }}
     >
-      <div
-        className="relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-6xl h-[90vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-6xl h-[90vh] flex flex-col">
         <div className="flex flex-col border-b border-gray-200 dark:border-gray-800">
           <div className="flex items-center justify-between p-4">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 truncate flex-1 mr-4">
@@ -111,6 +132,7 @@ export default function PDFViewerModal({
             </h2>
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={onClose}
                 className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
                 aria-label="Close"
@@ -120,7 +142,9 @@ export default function PDFViewerModal({
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
+                  aria-hidden="true"
                 >
+                  <title>Close</title>
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -137,6 +161,7 @@ export default function PDFViewerModal({
               {(["preview", "content"] as const).map((tab) => (
                 <button
                   key={tab}
+                  type="button"
                   onClick={() => setActiveTab(tab)}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                     activeTab === tab
@@ -165,6 +190,7 @@ export default function PDFViewerModal({
                     </p>
                     {documentId && (
                       <button
+                        type="button"
                         onClick={() => setActiveTab("content")}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
                       >

@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "biome check",
+    "process:pending": "node ./src/scripts/processPendingDocs.ts",
+    "test:e2e": "node ./src/scripts/e2eTest.js",
     "format": "biome format --write"
   },
   "dependencies": {

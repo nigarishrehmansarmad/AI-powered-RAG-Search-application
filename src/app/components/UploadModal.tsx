@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useState } from "react";
 
 interface UploadModalProps {
@@ -18,21 +19,26 @@ export default function UploadModal({
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [classification, setClassification] = useState<string | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "unset";
     if (!isOpen) {
       setFile(null);
       setMessage(null);
+      setClassification(null);
+      setSummary(null);
     }
+
     return () => {
       document.body.style.overflow = "unset";
     };
   }, [isOpen]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files?.[0]) {
+      setFile(event.target.files[0]);
       setMessage(null);
     }
   };
@@ -62,10 +68,13 @@ export default function UploadModal({
           type: "success",
           text: `File "${data.fileName}" uploaded successfully! Processed ${data.chunks} chunks.`,
         });
+        setClassification(data.classification ?? null);
+        setSummary(data.summary ?? null);
         setFile(null);
-        (
-          document.getElementById("upload-file-input") as HTMLInputElement
-        )?.setAttribute("value", "");
+        const fileInput = document.getElementById(
+          "upload-file-input",
+        ) as HTMLInputElement | null;
+        fileInput?.setAttribute("value", "");
         setTimeout(() => {
           onUploadSuccess?.();
           onClose();
@@ -73,8 +82,11 @@ export default function UploadModal({
       } else {
         setMessage({ type: "error", text: data.error || "Upload failed" });
       }
-    } catch (error: any) {
-      setMessage({ type: "error", text: error.message || "Upload failed" });
+    } catch (error: unknown) {
+      setMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : "Upload failed",
+      });
     } finally {
       setUploading(false);
     }
@@ -85,17 +97,27 @@ export default function UploadModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
-      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      tabIndex={-1}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          onClose();
+        }
+      }}
     >
-      <div
-        className="relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
             Upload Document
           </h2>
           <button
+            type="button"
             onClick={onClose}
             className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
             aria-label="Close"
@@ -105,7 +127,9 @@ export default function UploadModal({
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
+              <title>Close</title>
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -129,14 +153,7 @@ export default function UploadModal({
               type="file"
               accept=".pdf,.docx,.txt"
               onChange={handleFileChange}
-              className="block w-full text-sm text-gray-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-lg file:border-0
-                file:text-sm file:font-semibold
-                file:bg-blue-50 file:text-blue-700
-                hover:file:bg-blue-100
-                dark:file:bg-blue-900 dark:file:text-blue-300
-                dark:hover:file:bg-blue-800"
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300 dark:hover:file:bg-blue-800"
             />
           </div>
 
@@ -157,6 +174,7 @@ export default function UploadModal({
           )}
 
           <button
+            type="button"
             onClick={handleUpload}
             disabled={!file || uploading}
             className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
@@ -173,6 +191,19 @@ export default function UploadModal({
               }`}
             >
               {message.text}
+              {classification && (
+                <p className="mt-2 text-sm">
+                  <strong>Classification:</strong> {classification}
+                </p>
+              )}
+              {summary && (
+                <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded">
+                  <h3 className="text-sm font-medium mb-1">Summary</h3>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    {summary}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

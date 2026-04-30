@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { Ollama } from "ollama";
 import { NextResponse } from "next/server";
+import { Ollama } from "ollama";
 import {
   checkRateLimit,
   ensureQueryWithinLimit,

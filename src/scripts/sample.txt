@@ -1,0 +1,1 @@
+This is a sample document about Acme Corporation policies. It contains a short description for testing ingestion.

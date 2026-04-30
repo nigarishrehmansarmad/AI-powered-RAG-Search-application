@@ -36,3 +36,38 @@ export async function generateChatResponse(
 
   return response.message.content;
 }
+
+export async function classifyDocument(text: string): Promise<string> {
+  const modelName = process.env.OLLAMA_MODEL || "llama3.2";
+
+  const prompt = `Classify the following document into one of the categories: Invoice, Contract, Policy, Email, Memo, Report, Other. Output only the single label with no explanation.\n\nDocument:\n${text.slice(0, 4000)}`;
+
+  const response = await ollama.chat({
+    model: modelName,
+    messages: [
+      {
+        role: "system",
+        content: "You are a classifier that returns a single category label.",
+      },
+      { role: "user", content: prompt },
+    ],
+  });
+
+  return String(response.message.content || "Other").trim();
+}
+
+export async function summarizeDocument(text: string): Promise<string> {
+  const modelName = process.env.OLLAMA_MODEL || "llama3.2";
+
+  const prompt = `Write a concise summary (2-4 sentences) of the following document. Be factual and keep it short.\n\nDocument:\n${text.slice(0, 15000)}`;
+
+  const response = await ollama.chat({
+    model: modelName,
+    messages: [
+      { role: "system", content: "You produce short factual summaries." },
+      { role: "user", content: prompt },
+    ],
+  });
+
+  return String(response.message.content || "").trim();
+}

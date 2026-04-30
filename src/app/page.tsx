@@ -2,11 +2,20 @@
 import { useState } from "react";
 import Navigation from "./components/Navigation";
 
+interface SearchSource {
+  content?: string;
+  metadata?: {
+    source?: string;
+    file_name?: string;
+    document_id?: string;
+  };
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sources, setSources] = useState<any[]>([]);
+  const [sources, setSources] = useState<SearchSource[]>([]);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -26,8 +35,10 @@ export default function Home() {
         setAnswer(data.answer || "No answer generated");
         setSources(data.sources || []);
       }
-    } catch (error: any) {
-      setAnswer(`Error: ${error.message}`);
+    } catch (error: unknown) {
+      setAnswer(
+        `Error: ${error instanceof Error ? error.message : "Search failed"}`,
+      );
     } finally {
       setLoading(false);
     }
@@ -55,6 +66,7 @@ export default function Home() {
             rows={4}
           />
           <button
+            type="button"
             onClick={handleSearch}
             className="mt-4 bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
             disabled={loading || !query.trim()}
@@ -83,7 +95,10 @@ export default function Home() {
             <div className="space-y-3">
               {sources.map((source, index) => (
                 <div
-                  key={index}
+                  key={
+                    source.metadata?.document_id ||
+                    `${source.metadata?.source || source.content || "source"}-${index}`
+                  }
                   className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
                 >
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
