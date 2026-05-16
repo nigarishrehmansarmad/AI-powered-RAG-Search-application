@@ -7,6 +7,13 @@
   "generation": {
     "model": "llama3.2",
     "promptVersion": "search-route-v1",
+    "abstentionPhrases": [
+      "i do not know",
+      "don't know",
+      "not in the context",
+      "cannot find",
+      "not available"
+    ],
     "judge": {
       "enabled": true,
       "model": "llama3.2"

@@ -75,6 +75,10 @@ function csvEscape(value) {
   return text;
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function buildEvalPrompt(query, context) {
   return [
     {
@@ -267,7 +271,12 @@ function scoreRetrievalCase({ resultRows, expectedSupport, topK }) {
   };
 }
 
-function deterministicGenerationScore({ answer, context, testCase }) {
+function deterministicGenerationScore({
+  answer,
+  context,
+  testCase,
+  generationConfig,
+}) {
   const requiredFacts = Array.isArray(testCase.requiredFacts)
     ? testCase.requiredFacts
     : [];
@@ -291,10 +300,24 @@ function deterministicGenerationScore({ answer, context, testCase }) {
       ? forbiddenHits.length / forbiddenFacts.length
       : 0;
 
-  const abstentionDetected =
-    /\b(i do not know|don't know|not in the context|cannot find|not available)\b/i.test(
-      answer,
-    );
+  const abstentionPhrases = Array.isArray(generationConfig?.abstentionPhrases)
+    ? generationConfig.abstentionPhrases
+    : [];
+  const fallbackPhrases = [
+    "i do not know",
+    "don't know",
+    "not in the context",
+    "cannot find",
+    "not available",
+  ];
+  const phrases = abstentionPhrases.length
+    ? abstentionPhrases
+    : fallbackPhrases;
+  const abstentionRegex = new RegExp(
+    `\\b(${phrases.map((phrase) => escapeRegExp(String(phrase))).join("|")})\\b`,
+    "i",
+  );
+  const abstentionDetected = abstentionRegex.test(answer);
 
   let correctness = requiredCoverage;
   if (testCase.expectsAnswerInDocs === false) {
@@ -586,6 +609,7 @@ async function main() {
           answer,
           context,
           testCase,
+          generationConfig: config.generation,
         });
 
         let finalScore = deterministic;

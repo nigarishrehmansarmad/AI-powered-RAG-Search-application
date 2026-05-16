@@ -51,11 +51,7 @@ jobs:
       - name: Publish metric deltas
         if: always()
         run: |
-          if [ ! -f src/evals/reports/latest-summary.json ]; then
-            echo "No eval summary available." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          node -e "const fs=require('fs');const s=JSON.parse(fs.readFileSync('src/evals/reports/latest-summary.json','utf8'));const d=s.deltasFromBaseline||{};const r=s.metrics?.retrieval||{};const g=s.metrics?.generation||{};const lines=['## Quantitative RAG Eval (PR subset)','',`Overall score: **${s.metrics?.overallScore}** (delta: ${d.overallScore ?? 'n/a'})`,'',`Retrieval Recall@k: ${r.recallAtK}` ,`Retrieval MRR: ${r.mrr}` ,`Generation Correctness: ${g.correctness ?? 'n/a'}` ,`Generation Faithfulness: ${g.faithfulness ?? 'n/a'}` ,`Hallucination Rate: ${g.hallucinationRate ?? 'n/a'}`];fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n')+'\n');"
+          node ./src/scripts/publishEvalSummary.js "Quantitative RAG Eval (PR subset)"
 
   rag-eval-full:
     if: github.event_name != 'pull_request'
@@ -99,8 +95,4 @@ jobs:
       - name: Publish metric deltas
         if: always()
         run: |
-          if [ ! -f src/evals/reports/latest-summary.json ]; then
-            echo "No eval summary available." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          node -e "const fs=require('fs');const s=JSON.parse(fs.readFileSync('src/evals/reports/latest-summary.json','utf8'));const d=s.deltasFromBaseline||{};const r=s.metrics?.retrieval||{};const g=s.metrics?.generation||{};const lines=['## Quantitative RAG Eval (full)','',`Overall score: **${s.metrics?.overallScore}** (delta: ${d.overallScore ?? 'n/a'})`,'',`Retrieval Recall@k: ${r.recallAtK}` ,`Retrieval MRR: ${r.mrr}` ,`Generation Correctness: ${g.correctness ?? 'n/a'}` ,`Generation Faithfulness: ${g.faithfulness ?? 'n/a'}` ,`Hallucination Rate: ${g.hallucinationRate ?? 'n/a'}`];fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n')+'\n');"
+          node ./src/scripts/publishEvalSummary.js "Quantitative RAG Eval (full)"
