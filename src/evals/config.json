@@ -1,0 +1,39 @@
+{
+  "retrieval": {
+    "topK": 5,
+    "matchThreshold": 0.0,
+    "embeddingModel": "nomic-embed-text"
+  },
+  "generation": {
+    "model": "llama3.2",
+    "promptVersion": "search-route-v1",
+    "judge": {
+      "enabled": true,
+      "model": "llama3.2"
+    }
+  },
+  "chunking": {
+    "size": 800,
+    "overlap": 100
+  },
+  "thresholds": {
+    "retrieval": {
+      "recallAtK": 0.8,
+      "precisionAtK": 0.2,
+      "mrr": 0.7,
+      "hitRate": 0.8
+    },
+    "generation": {
+      "correctness": 0.75,
+      "faithfulness": 0.75,
+      "relevance": 0.75,
+      "hallucinationRate": 0.2
+    },
+    "overallScore": 0.75,
+    "maxNegativeDrift": 0.05
+  },
+  "weights": {
+    "retrieval": 0.45,
+    "generation": 0.55
+  }
+}

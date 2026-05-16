@@ -1,0 +1,19 @@
+{
+  "createdAt": null,
+  "datasetVersion": "1.0.0",
+  "metrics": {
+    "retrieval": {
+      "recallAtK": null,
+      "precisionAtK": null,
+      "mrr": null,
+      "hitRate": null
+    },
+    "generation": {
+      "correctness": null,
+      "faithfulness": null,
+      "relevance": null,
+      "hallucinationRate": null
+    },
+    "overallScore": null
+  }
+}
