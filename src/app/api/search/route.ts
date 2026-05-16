@@ -25,7 +25,10 @@ type SearchResultRow = {
   [key: string]: unknown;
 };
 
-function tokenize(text: string): string[] {
+const SIMILARITY_WEIGHT = 0.7;
+const OVERLAP_WEIGHT = 0.3;
+
+function tokenizeForLexicalOverlap(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
@@ -38,14 +41,14 @@ function rerankResults(
   rows: SearchResultRow[],
   topK: number,
 ): SearchResultRow[] {
-  const queryTokens = new Set(tokenize(query));
+  const queryTokens = new Set(tokenizeForLexicalOverlap(query));
   if (queryTokens.size === 0) {
     return rows.slice(0, topK);
   }
 
   const scored = rows.map((row, index) => {
     const content = String(row.content ?? "");
-    const docTokens = tokenize(content);
+    const docTokens = tokenizeForLexicalOverlap(content);
     const overlap = docTokens.reduce(
       (count, token) => count + (queryTokens.has(token) ? 1 : 0),
       0,
@@ -54,7 +57,8 @@ function rerankResults(
     const similarity = Number.isFinite(Number(row.similarity))
       ? Number(row.similarity)
       : 0;
-    const rerankScore = similarity * 0.7 + overlapScore * 0.3;
+    const rerankScore =
+      similarity * SIMILARITY_WEIGHT + overlapScore * OVERLAP_WEIGHT;
 
     return { row, index, rerankScore };
   });
