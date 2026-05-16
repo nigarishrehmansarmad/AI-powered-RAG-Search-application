@@ -314,6 +314,7 @@ function deterministicGenerationScore({
     ? abstentionPhrases
     : fallbackPhrases;
   const abstentionRegex = new RegExp(
+    // Use case-insensitive whole-phrase matching to avoid partial word matches.
     `\\b(${phrases.map((phrase) => escapeRegExp(String(phrase))).join("|")})\\b`,
     "i",
   );
@@ -390,7 +391,11 @@ async function llmJudgeScore({
       judge: "llm",
       rationale: String(parsed.rationale ?? ""),
     };
-  } catch {
+  } catch (error) {
+    console.warn(
+      "LLM judge scoring failed; using deterministic scoring fallback.",
+      error,
+    );
     return null;
   }
 }
