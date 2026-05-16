@@ -24,9 +24,9 @@ This repository includes a quantitative evaluation pipeline for retrieval and ge
 
 ### Dataset and config
 
-- Dataset: `/home/runner/work/AI-powered-RAG-Search-application/AI-powered-RAG-Search-application/src/evals/data/evalDataset.json`
-- Config and thresholds: `/home/runner/work/AI-powered-RAG-Search-application/AI-powered-RAG-Search-application/src/evals/config.json`
-- Baseline metrics: `/home/runner/work/AI-powered-RAG-Search-application/AI-powered-RAG-Search-application/src/evals/baselines/default.json`
+- Dataset: `src/evals/data/evalDataset.json`
+- Config and thresholds: `src/evals/config.json`
+- Baseline metrics: `src/evals/baselines/default.json`
 
 ### Run evaluations
 
@@ -49,15 +49,15 @@ npm run eval:rag:pr      # smaller PR subset
 
 Each run writes JSON/CSV artifacts under:
 
-- `/home/runner/work/AI-powered-RAG-Search-application/AI-powered-RAG-Search-application/src/evals/reports/latest-summary.json`
-- `/home/runner/work/AI-powered-RAG-Search-application/AI-powered-RAG-Search-application/src/evals/reports/latest-retrieval.csv`
-- `/home/runner/work/AI-powered-RAG-Search-application/AI-powered-RAG-Search-application/src/evals/reports/latest-generation.csv`
+- `src/evals/reports/latest-summary.json`
+- `src/evals/reports/latest-retrieval.csv`
+- `src/evals/reports/latest-generation.csv`
 
 Timestamped snapshots are also generated for regression comparison.
 
 ### CI automation
 
-GitHub Actions workflow: `/home/runner/work/AI-powered-RAG-Search-application/AI-powered-RAG-Search-application/.github/workflows/rag-eval.yml`
+GitHub Actions workflow: `.github/workflows/rag-eval.yml`
 
 - Pull requests run the `pr` subset and publish metric deltas.
 - Main branch pushes and nightly schedule run the full eval suite.

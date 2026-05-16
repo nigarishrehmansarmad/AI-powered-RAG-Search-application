@@ -14,6 +14,8 @@ const DEFAULT_BASELINE_PATH = path.join(
   "src/evals/baselines/default.json",
 );
 const REPORT_DIR = path.join(ROOT, "src/evals/reports");
+const MAX_RESULT_CHUNK_CHARS = 2000;
+const MAX_CONTEXT_CHARS = 12000;
 
 function parseArgs(argv) {
   const args = {
@@ -395,7 +397,7 @@ function calcOverallScore({ retrievalMetrics, generationMetrics, weights }) {
   );
 }
 
-function evaluateThresholds({ summary, config, baseline }) {
+function evaluateThresholds({ summary, config, baseline, mode }) {
   const failures = [];
   const thresholds = config.thresholds ?? {};
 
@@ -414,26 +416,28 @@ function evaluateThresholds({ summary, config, baseline }) {
     }
   }
 
-  for (const key of ["correctness", "faithfulness", "relevance"]) {
-    const threshold = generationThresholds[key];
+  if (mode !== "retrieval") {
+    for (const key of ["correctness", "faithfulness", "relevance"]) {
+      const threshold = generationThresholds[key];
+      if (
+        typeof threshold === "number" &&
+        summary.metrics.generation[key] < threshold
+      ) {
+        failures.push(
+          `Generation metric ${key}=${summary.metrics.generation[key]} is below threshold ${threshold}`,
+        );
+      }
+    }
+
     if (
-      typeof threshold === "number" &&
-      summary.metrics.generation[key] < threshold
+      typeof generationThresholds.hallucinationRate === "number" &&
+      summary.metrics.generation.hallucinationRate >
+        generationThresholds.hallucinationRate
     ) {
       failures.push(
-        `Generation metric ${key}=${summary.metrics.generation[key]} is below threshold ${threshold}`,
+        `Generation hallucinationRate=${summary.metrics.generation.hallucinationRate} exceeds threshold ${generationThresholds.hallucinationRate}`,
       );
     }
-  }
-
-  if (
-    typeof generationThresholds.hallucinationRate === "number" &&
-    summary.metrics.generation.hallucinationRate >
-      generationThresholds.hallucinationRate
-  ) {
-    failures.push(
-      `Generation hallucinationRate=${summary.metrics.generation.hallucinationRate} exceeds threshold ${generationThresholds.hallucinationRate}`,
-    );
   }
 
   if (
@@ -566,9 +570,11 @@ async function main() {
 
       if (args.mode !== "retrieval") {
         const context = matches
-          .map((row) => String(row.content ?? "").slice(0, 2000))
+          .map((row) =>
+            String(row.content ?? "").slice(0, MAX_RESULT_CHUNK_CHARS),
+          )
           .join("\n---\n")
-          .slice(0, 12000);
+          .slice(0, MAX_CONTEXT_CHARS);
 
         const answerResponse = await ollama.chat({
           model: modelName,
@@ -753,10 +759,12 @@ async function main() {
       },
     };
 
-    const thresholdsFailed =
-      args.mode === "retrieval"
-        ? []
-        : evaluateThresholds({ summary, config, baseline });
+    const thresholdsFailed = evaluateThresholds({
+      summary,
+      config,
+      baseline,
+      mode: args.mode,
+    });
     summary.thresholdFailures = thresholdsFailed;
 
     await fs.mkdir(REPORT_DIR, { recursive: true });
