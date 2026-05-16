@@ -9,7 +9,10 @@ const { Ollama } = require("ollama");
 const ROOT = path.resolve(__dirname, "../..");
 const DEFAULT_DATASET_PATH = path.join(ROOT, "src/evals/data/evalDataset.json");
 const DEFAULT_CONFIG_PATH = path.join(ROOT, "src/evals/config.json");
-const DEFAULT_BASELINE_PATH = path.join(ROOT, "src/evals/baselines/default.json");
+const DEFAULT_BASELINE_PATH = path.join(
+  ROOT,
+  "src/evals/baselines/default.json",
+);
 const REPORT_DIR = path.join(ROOT, "src/evals/reports");
 
 function parseArgs(argv) {
@@ -84,7 +87,13 @@ function buildEvalPrompt(query, context) {
   ];
 }
 
-function buildJudgePrompt({ query, answer, context, referenceAnswer, requiredFacts }) {
+function buildJudgePrompt({
+  query,
+  answer,
+  context,
+  referenceAnswer,
+  requiredFacts,
+}) {
   return [
     {
       role: "system",
@@ -105,7 +114,11 @@ async function loadJson(filePath) {
 
 async function writeJson(filePath, payload) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+  await fs.writeFile(
+    filePath,
+    `${JSON.stringify(payload, null, 2)}\n`,
+    "utf-8",
+  );
 }
 
 function filterCasesBySplit(testCases, split) {
@@ -115,7 +128,13 @@ function filterCasesBySplit(testCases, split) {
   return testCases.filter((testCase) => testCase.split === split);
 }
 
-async function seedDatasetDocuments({ supabase, ollama, dataset, config, runId }) {
+async function seedDatasetDocuments({
+  supabase,
+  ollama,
+  dataset,
+  config,
+  runId,
+}) {
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: asNumber(config.chunking?.size, 800),
     chunkOverlap: asNumber(config.chunking?.overlap, 100),
@@ -160,7 +179,9 @@ async function seedDatasetDocuments({ supabase, ollama, dataset, config, runId }
         .single();
 
       if (error) {
-        throw new Error(`Failed to seed eval document ${doc.id}: ${error.message}`);
+        throw new Error(
+          `Failed to seed eval document ${doc.id}: ${error.message}`,
+        );
       }
 
       seededChunks.push(data);
@@ -252,15 +273,26 @@ function deterministicGenerationScore({ answer, context, testCase }) {
     ? testCase.forbiddenFacts
     : [];
 
-  const matchedRequired = requiredFacts.filter((fact) => lowerIncludes(answer, fact));
+  const matchedRequired = requiredFacts.filter((fact) =>
+    lowerIncludes(answer, fact),
+  );
   const requiredCoverage =
-    requiredFacts.length > 0 ? matchedRequired.length / requiredFacts.length : 1;
+    requiredFacts.length > 0
+      ? matchedRequired.length / requiredFacts.length
+      : 1;
 
-  const forbiddenHits = forbiddenFacts.filter((fact) => lowerIncludes(answer, fact));
-  const forbiddenPenalty = forbiddenFacts.length > 0 ? forbiddenHits.length / forbiddenFacts.length : 0;
+  const forbiddenHits = forbiddenFacts.filter((fact) =>
+    lowerIncludes(answer, fact),
+  );
+  const forbiddenPenalty =
+    forbiddenFacts.length > 0
+      ? forbiddenHits.length / forbiddenFacts.length
+      : 0;
 
   const abstentionDetected =
-    /\b(i do not know|don't know|not in the context|cannot find|not available)\b/i.test(answer);
+    /\b(i do not know|don't know|not in the context|cannot find|not available)\b/i.test(
+      answer,
+    );
 
   let correctness = requiredCoverage;
   if (testCase.expectsAnswerInDocs === false) {
@@ -269,14 +301,18 @@ function deterministicGenerationScore({ answer, context, testCase }) {
 
   let faithfulness = 1 - forbiddenPenalty;
   if (testCase.expectsAnswerInDocs !== false) {
-    const contextMatches = matchedRequired.filter((fact) => lowerIncludes(context, fact));
+    const contextMatches = matchedRequired.filter((fact) =>
+      lowerIncludes(context, fact),
+    );
     if (requiredFacts.length > 0) {
       faithfulness = contextMatches.length / requiredFacts.length;
     }
   }
 
   const relevance = requiredCoverage;
-  const hallucinated = forbiddenHits.length > 0 || (testCase.expectsAnswerInDocs === false && !abstentionDetected);
+  const hallucinated =
+    forbiddenHits.length > 0 ||
+    (testCase.expectsAnswerInDocs === false && !abstentionDetected);
 
   return {
     relevance: toFixedNumber(Math.max(0, Math.min(1, relevance))),
@@ -290,7 +326,14 @@ function deterministicGenerationScore({ answer, context, testCase }) {
   };
 }
 
-async function llmJudgeScore({ ollama, model, query, answer, context, testCase }) {
+async function llmJudgeScore({
+  ollama,
+  model,
+  query,
+  answer,
+  context,
+  testCase,
+}) {
   try {
     const judgeResponse = await ollama.chat({
       model,
@@ -299,7 +342,9 @@ async function llmJudgeScore({ ollama, model, query, answer, context, testCase }
         answer,
         context,
         referenceAnswer: String(testCase.referenceAnswer ?? ""),
-        requiredFacts: Array.isArray(testCase.requiredFacts) ? testCase.requiredFacts : [],
+        requiredFacts: Array.isArray(testCase.requiredFacts)
+          ? testCase.requiredFacts
+          : [],
       }),
     });
 
@@ -307,9 +352,15 @@ async function llmJudgeScore({ ollama, model, query, answer, context, testCase }
     const parsed = JSON.parse(raw);
 
     return {
-      relevance: toFixedNumber(Math.max(0, Math.min(1, asNumber(parsed.relevance, 0)))),
-      faithfulness: toFixedNumber(Math.max(0, Math.min(1, asNumber(parsed.faithfulness, 0)))),
-      correctness: toFixedNumber(Math.max(0, Math.min(1, asNumber(parsed.correctness, 0)))),
+      relevance: toFixedNumber(
+        Math.max(0, Math.min(1, asNumber(parsed.relevance, 0))),
+      ),
+      faithfulness: toFixedNumber(
+        Math.max(0, Math.min(1, asNumber(parsed.faithfulness, 0))),
+      ),
+      correctness: toFixedNumber(
+        Math.max(0, Math.min(1, asNumber(parsed.correctness, 0))),
+      ),
       hallucinated: Boolean(parsed.hallucinated),
       judge: "llm",
       rationale: String(parsed.rationale ?? ""),
@@ -326,15 +377,21 @@ function average(values) {
 
 function calcOverallScore({ retrievalMetrics, generationMetrics, weights }) {
   const retrievalComposite =
-    (retrievalMetrics.recallAtK + retrievalMetrics.precisionAtK + retrievalMetrics.mrr + retrievalMetrics.hitRate) /
+    (retrievalMetrics.recallAtK +
+      retrievalMetrics.precisionAtK +
+      retrievalMetrics.mrr +
+      retrievalMetrics.hitRate) /
     4;
   const generationComposite =
-    (generationMetrics.correctness + generationMetrics.faithfulness + generationMetrics.relevance +
+    (generationMetrics.correctness +
+      generationMetrics.faithfulness +
+      generationMetrics.relevance +
       (1 - generationMetrics.hallucinationRate)) /
     4;
 
   return toFixedNumber(
-    retrievalComposite * asNumber(weights.retrieval, 0.5) + generationComposite * asNumber(weights.generation, 0.5),
+    retrievalComposite * asNumber(weights.retrieval, 0.5) +
+      generationComposite * asNumber(weights.generation, 0.5),
   );
 }
 
@@ -347,7 +404,10 @@ function evaluateThresholds({ summary, config, baseline }) {
 
   for (const key of ["recallAtK", "precisionAtK", "mrr", "hitRate"]) {
     const threshold = retrievalThresholds[key];
-    if (typeof threshold === "number" && summary.metrics.retrieval[key] < threshold) {
+    if (
+      typeof threshold === "number" &&
+      summary.metrics.retrieval[key] < threshold
+    ) {
       failures.push(
         `Retrieval metric ${key}=${summary.metrics.retrieval[key]} is below threshold ${threshold}`,
       );
@@ -356,7 +416,10 @@ function evaluateThresholds({ summary, config, baseline }) {
 
   for (const key of ["correctness", "faithfulness", "relevance"]) {
     const threshold = generationThresholds[key];
-    if (typeof threshold === "number" && summary.metrics.generation[key] < threshold) {
+    if (
+      typeof threshold === "number" &&
+      summary.metrics.generation[key] < threshold
+    ) {
       failures.push(
         `Generation metric ${key}=${summary.metrics.generation[key]} is below threshold ${threshold}`,
       );
@@ -365,7 +428,8 @@ function evaluateThresholds({ summary, config, baseline }) {
 
   if (
     typeof generationThresholds.hallucinationRate === "number" &&
-    summary.metrics.generation.hallucinationRate > generationThresholds.hallucinationRate
+    summary.metrics.generation.hallucinationRate >
+      generationThresholds.hallucinationRate
   ) {
     failures.push(
       `Generation hallucinationRate=${summary.metrics.generation.hallucinationRate} exceeds threshold ${generationThresholds.hallucinationRate}`,
@@ -402,7 +466,9 @@ async function removeSeededDocs({ supabase, runId }) {
     .eq("metadata->>eval_run_id", runId);
 
   if (error) {
-    console.warn(`Warning: failed to clean seeded eval documents for run ${runId}: ${error.message}`);
+    console.warn(
+      `Warning: failed to clean seeded eval documents for run ${runId}: ${error.message}`,
+    );
   }
 }
 
@@ -424,7 +490,8 @@ async function main() {
   const supabaseUrl = requiredEnv("NEXT_PUBLIC_SUPABASE_URL");
   const serviceRoleKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
   const ollamaHost = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-  const modelName = process.env.OLLAMA_MODEL || config.generation?.model || "llama3.2";
+  const modelName =
+    process.env.OLLAMA_MODEL || config.generation?.model || "llama3.2";
   const embeddingModel = config.retrieval?.embeddingModel || "nomic-embed-text";
   const topK = asNumber(config.retrieval?.topK, 5);
   const matchThreshold = asNumber(config.retrieval?.matchThreshold, 0);
@@ -436,12 +503,12 @@ async function main() {
   const startedAt = new Date().toISOString();
 
   console.log(`Starting RAG eval run ${runId}`);
-  console.log(`Mode=${args.mode} Split=${args.split} Cases=${selectedCases.length}`);
-
-  let seededDocMap;
+  console.log(
+    `Mode=${args.mode} Split=${args.split} Cases=${selectedCases.length}`,
+  );
 
   try {
-    seededDocMap = await seedDatasetDocuments({
+    await seedDatasetDocuments({
       supabase,
       ollama,
       dataset,
@@ -460,23 +527,33 @@ async function main() {
 
     for (const testCase of selectedCases) {
       const query = String(testCase.query ?? "").trim();
-      const queryEmbedding = await ollama.embeddings({ model: embeddingModel, prompt: query });
-
-      const { data: matchData, error: matchError } = await supabase.rpc("match_documents", {
-        query_embedding: JSON.stringify(queryEmbedding.embedding),
-        match_threshold: matchThreshold,
-        match_count: topK,
+      const queryEmbedding = await ollama.embeddings({
+        model: embeddingModel,
+        prompt: query,
       });
 
+      const { data: matchData, error: matchError } = await supabase.rpc(
+        "match_documents",
+        {
+          query_embedding: JSON.stringify(queryEmbedding.embedding),
+          match_threshold: matchThreshold,
+          match_count: topK,
+        },
+      );
+
       if (matchError) {
-        throw new Error(`match_documents failed for case ${testCase.id}: ${matchError.message}`);
+        throw new Error(
+          `match_documents failed for case ${testCase.id}: ${matchError.message}`,
+        );
       }
 
       const matches = Array.isArray(matchData) ? matchData : [];
 
       const retrievalScore = scoreRetrievalCase({
         resultRows: matches,
-        expectedSupport: Array.isArray(testCase.expectedSupport) ? testCase.expectedSupport : [],
+        expectedSupport: Array.isArray(testCase.expectedSupport)
+          ? testCase.expectedSupport
+          : [],
         topK,
       });
 
@@ -537,8 +614,12 @@ async function main() {
     }
 
     const retrievalMetrics = {
-      recallAtK: toFixedNumber(average(retrievalRows.map((row) => row.recallAtK))),
-      precisionAtK: toFixedNumber(average(retrievalRows.map((row) => row.precisionAtK))),
+      recallAtK: toFixedNumber(
+        average(retrievalRows.map((row) => row.recallAtK)),
+      ),
+      precisionAtK: toFixedNumber(
+        average(retrievalRows.map((row) => row.precisionAtK)),
+      ),
       mrr: toFixedNumber(average(retrievalRows.map((row) => row.mrr))),
       hitRate: toFixedNumber(average(retrievalRows.map((row) => row.hit))),
     };
@@ -552,9 +633,15 @@ async function main() {
             hallucinationRate: 0,
           }
         : {
-            correctness: toFixedNumber(average(generationRows.map((row) => row.correctness))),
-            faithfulness: toFixedNumber(average(generationRows.map((row) => row.faithfulness))),
-            relevance: toFixedNumber(average(generationRows.map((row) => row.relevance))),
+            correctness: toFixedNumber(
+              average(generationRows.map((row) => row.correctness)),
+            ),
+            faithfulness: toFixedNumber(
+              average(generationRows.map((row) => row.faithfulness)),
+            ),
+            relevance: toFixedNumber(
+              average(generationRows.map((row) => row.relevance)),
+            ),
             hallucinationRate: toFixedNumber(
               average(generationRows.map((row) => (row.hallucinated ? 1 : 0))),
             ),
@@ -595,19 +682,29 @@ async function main() {
         retrieval: {
           recallAtK:
             typeof baseline?.metrics?.retrieval?.recallAtK === "number"
-              ? toFixedNumber(retrievalMetrics.recallAtK - baseline.metrics.retrieval.recallAtK)
+              ? toFixedNumber(
+                  retrievalMetrics.recallAtK -
+                    baseline.metrics.retrieval.recallAtK,
+                )
               : null,
           precisionAtK:
             typeof baseline?.metrics?.retrieval?.precisionAtK === "number"
-              ? toFixedNumber(retrievalMetrics.precisionAtK - baseline.metrics.retrieval.precisionAtK)
+              ? toFixedNumber(
+                  retrievalMetrics.precisionAtK -
+                    baseline.metrics.retrieval.precisionAtK,
+                )
               : null,
           mrr:
             typeof baseline?.metrics?.retrieval?.mrr === "number"
-              ? toFixedNumber(retrievalMetrics.mrr - baseline.metrics.retrieval.mrr)
+              ? toFixedNumber(
+                  retrievalMetrics.mrr - baseline.metrics.retrieval.mrr,
+                )
               : null,
           hitRate:
             typeof baseline?.metrics?.retrieval?.hitRate === "number"
-              ? toFixedNumber(retrievalMetrics.hitRate - baseline.metrics.retrieval.hitRate)
+              ? toFixedNumber(
+                  retrievalMetrics.hitRate - baseline.metrics.retrieval.hitRate,
+                )
               : null,
         },
         generation:
@@ -617,21 +714,28 @@ async function main() {
                 correctness:
                   typeof baseline?.metrics?.generation?.correctness === "number"
                     ? toFixedNumber(
-                        generationMetrics.correctness - baseline.metrics.generation.correctness,
+                        generationMetrics.correctness -
+                          baseline.metrics.generation.correctness,
                       )
                     : null,
                 faithfulness:
-                  typeof baseline?.metrics?.generation?.faithfulness === "number"
+                  typeof baseline?.metrics?.generation?.faithfulness ===
+                  "number"
                     ? toFixedNumber(
-                        generationMetrics.faithfulness - baseline.metrics.generation.faithfulness,
+                        generationMetrics.faithfulness -
+                          baseline.metrics.generation.faithfulness,
                       )
                     : null,
                 relevance:
                   typeof baseline?.metrics?.generation?.relevance === "number"
-                    ? toFixedNumber(generationMetrics.relevance - baseline.metrics.generation.relevance)
+                    ? toFixedNumber(
+                        generationMetrics.relevance -
+                          baseline.metrics.generation.relevance,
+                      )
                     : null,
                 hallucinationRate:
-                  typeof baseline?.metrics?.generation?.hallucinationRate === "number"
+                  typeof baseline?.metrics?.generation?.hallucinationRate ===
+                  "number"
                     ? toFixedNumber(
                         generationMetrics.hallucinationRate -
                           baseline.metrics.generation.hallucinationRate,
@@ -664,7 +768,17 @@ async function main() {
     await writeJson(latestPath, summary);
 
     const retrievalCsvRows = [
-      ["id", "query", "recallAtK", "precisionAtK", "mrr", "hit", "hits", "expectedCount", "retrievedCount"],
+      [
+        "id",
+        "query",
+        "recallAtK",
+        "precisionAtK",
+        "mrr",
+        "hit",
+        "hits",
+        "expectedCount",
+        "retrievedCount",
+      ],
       ...retrievalRows.map((row) => [
         row.id,
         row.query,
@@ -681,8 +795,16 @@ async function main() {
     const retrievalCsv = retrievalCsvRows
       .map((row) => row.map((cell) => csvEscape(cell)).join(","))
       .join("\n");
-    await fs.writeFile(path.join(REPORT_DIR, `retrieval-${timestamp}.csv`), `${retrievalCsv}\n`, "utf-8");
-    await fs.writeFile(path.join(REPORT_DIR, "latest-retrieval.csv"), `${retrievalCsv}\n`, "utf-8");
+    await fs.writeFile(
+      path.join(REPORT_DIR, `retrieval-${timestamp}.csv`),
+      `${retrievalCsv}\n`,
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(REPORT_DIR, "latest-retrieval.csv"),
+      `${retrievalCsv}\n`,
+      "utf-8",
+    );
 
     if (generationRows.length > 0) {
       const generationCsvRows = [
@@ -713,8 +835,16 @@ async function main() {
       const generationCsv = generationCsvRows
         .map((row) => row.map((cell) => csvEscape(cell)).join(","))
         .join("\n");
-      await fs.writeFile(path.join(REPORT_DIR, `generation-${timestamp}.csv`), `${generationCsv}\n`, "utf-8");
-      await fs.writeFile(path.join(REPORT_DIR, "latest-generation.csv"), `${generationCsv}\n`, "utf-8");
+      await fs.writeFile(
+        path.join(REPORT_DIR, `generation-${timestamp}.csv`),
+        `${generationCsv}\n`,
+        "utf-8",
+      );
+      await fs.writeFile(
+        path.join(REPORT_DIR, "latest-generation.csv"),
+        `${generationCsv}\n`,
+        "utf-8",
+      );
     }
 
     if (args.updateBaseline) {
@@ -732,7 +862,9 @@ async function main() {
     console.log(`Metrics: ${JSON.stringify(summary.metrics)}`);
 
     if (summary.deltasFromBaseline?.overallScore !== null) {
-      console.log(`Overall score delta vs baseline: ${summary.deltasFromBaseline.overallScore}`);
+      console.log(
+        `Overall score delta vs baseline: ${summary.deltasFromBaseline.overallScore}`,
+      );
     }
 
     if (thresholdsFailed.length > 0) {
