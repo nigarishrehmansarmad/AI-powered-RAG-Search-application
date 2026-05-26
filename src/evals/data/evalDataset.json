@@ -1,0 +1,73 @@
+{
+  "version": "1.0.0",
+  "description": "Seeded evaluation dataset for quantitative RAG checks.",
+  "documents": [
+    {
+      "id": "acme-policy",
+      "fileName": "acme-policy.txt",
+      "content": "Acme Employee Policy: Full-time employees receive 15 paid vacation days per calendar year. Security incidents must be reported to security@acme.test within 24 hours. Conference travel reimbursement is capped at $1200 per person annually."
+    },
+    {
+      "id": "oncall-playbook",
+      "fileName": "oncall-playbook.txt",
+      "content": "On-call Playbook: During a P1 outage, acknowledge within 5 minutes and escalate to the primary incident commander. Postmortems are required within 3 business days."
+    }
+  ],
+  "testCases": [
+    {
+      "id": "tc-1-vacation",
+      "split": "pr",
+      "query": "How many paid vacation days do full-time employees get?",
+      "expectedSupport": [
+        {
+          "documentId": "acme-policy",
+          "chunkIndex": 0
+        }
+      ],
+      "referenceAnswer": "Full-time employees receive 15 paid vacation days per calendar year.",
+      "requiredFacts": ["15", "paid vacation days", "full-time"],
+      "forbiddenFacts": ["20 days", "unlimited"],
+      "expectsAnswerInDocs": true
+    },
+    {
+      "id": "tc-2-security-email",
+      "split": "pr",
+      "query": "Where should security incidents be reported?",
+      "expectedSupport": [
+        {
+          "documentId": "acme-policy",
+          "chunkIndex": 0
+        }
+      ],
+      "referenceAnswer": "Security incidents must be reported to security@acme.test within 24 hours.",
+      "requiredFacts": ["security@acme.test", "24 hours"],
+      "forbiddenFacts": ["slack", "no deadline"],
+      "expectsAnswerInDocs": true
+    },
+    {
+      "id": "tc-3-unknown-answer",
+      "split": "full",
+      "query": "What is the maternity leave policy?",
+      "expectedSupport": [],
+      "referenceAnswer": "The assistant should state that it does not know because the information is not present.",
+      "requiredFacts": ["do not know"],
+      "forbiddenFacts": ["12 weeks", "16 weeks"],
+      "expectsAnswerInDocs": false
+    },
+    {
+      "id": "tc-4-oncall-response",
+      "split": "full",
+      "query": "How quickly should a P1 outage be acknowledged?",
+      "expectedSupport": [
+        {
+          "documentId": "oncall-playbook",
+          "chunkIndex": 0
+        }
+      ],
+      "referenceAnswer": "A P1 outage should be acknowledged within 5 minutes.",
+      "requiredFacts": ["5 minutes", "P1 outage"],
+      "forbiddenFacts": ["30 minutes", "1 hour"],
+      "expectsAnswerInDocs": true
+    }
+  ]
+}

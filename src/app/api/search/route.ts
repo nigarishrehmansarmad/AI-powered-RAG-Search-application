@@ -19,6 +19,60 @@ const ollama = new Ollama({
   host: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
 });
 
+type SearchResultRow = {
+  content?: string;
+  similarity?: number;
+  [key: string]: unknown;
+};
+
+const SIMILARITY_WEIGHT = 0.7;
+const OVERLAP_WEIGHT = 0.3;
+
+function tokenizeForLexicalOverlap(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
+}
+
+function rerankResults(
+  query: string,
+  rows: SearchResultRow[],
+  topK: number,
+): SearchResultRow[] {
+  const queryTokens = new Set(tokenizeForLexicalOverlap(query));
+  if (queryTokens.size === 0) {
+    return rows.slice(0, topK);
+  }
+
+  const scored = rows.map((row, index) => {
+    const content = String(row.content ?? "");
+    const docTokens = tokenizeForLexicalOverlap(content);
+    const overlap = docTokens.reduce(
+      (count, token) => count + (queryTokens.has(token) ? 1 : 0),
+      0,
+    );
+    const overlapScore = overlap / queryTokens.size;
+    const similarity = Number.isFinite(Number(row.similarity))
+      ? Number(row.similarity)
+      : 0;
+    const rerankScore =
+      similarity * SIMILARITY_WEIGHT + overlapScore * OVERLAP_WEIGHT;
+
+    return { row, index, rerankScore };
+  });
+
+  scored.sort((a, b) => {
+    if (b.rerankScore !== a.rerankScore) {
+      return b.rerankScore - a.rerankScore;
+    }
+    return a.index - b.index;
+  });
+
+  return scored.slice(0, topK).map((item) => item.row);
+}
+
 export async function POST(req: Request) {
   try {
     if (!isAuthenticatedRequest(req)) {
@@ -48,12 +102,13 @@ export async function POST(req: Request) {
       prompt: query,
     });
 
-    // Find similar documents using vector similarity search
-    // The match_documents function finds the 5 most similar chunks
+    // Find candidate chunks with vector similarity search, then re-rank
+    const finalTopK = 5;
+    const candidateCount = 20;
     const { data: results, error } = await supabase.rpc("match_documents", {
       query_embedding: JSON.stringify(embeddingResponse.embedding),
       match_threshold: 0.0, // Accept any similarity (you can increase this for stricter matching)
-      match_count: 5, // Return top 5 most similar chunks
+      match_count: candidateCount,
     });
 
     if (error) {
@@ -62,7 +117,11 @@ export async function POST(req: Request) {
 
     // Combine retrieved chunks into context
     // These chunks will be used as context for the AI to generate an answer
-    const retrievedResults = (results ?? []) as Array<{ content?: string }>;
+    const retrievedResults = rerankResults(
+      query,
+      (results ?? []) as SearchResultRow[],
+      finalTopK,
+    );
     const context = retrievedResults
       .map((result) => String(result.content ?? "").slice(0, 2000))
       .join("\n---\n")
@@ -89,7 +148,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       answer: chatResponse.message.content,
-      sources: results,
+      sources: retrievedResults,
     });
   } catch (error: unknown) {
     console.error("Search failed", error);

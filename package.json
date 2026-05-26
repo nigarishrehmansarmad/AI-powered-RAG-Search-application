@@ -9,7 +9,12 @@
     "lint": "biome check",
     "process:pending": "node ./src/scripts/processPendingDocs.ts",
     "test:e2e": "node ./src/scripts/e2eTest.js",
-    "format": "biome format --write"
+    "format": "biome format --write",
+    "eval:retrieval": "node ./src/scripts/ragEval.js --mode=retrieval",
+    "eval:generation": "node ./src/scripts/ragEval.js --mode=generation",
+    "eval:rag": "node ./src/scripts/ragEval.js --mode=combined --split=full",
+    "eval:rag:pr": "node ./src/scripts/ragEval.js --mode=combined --split=pr",
+    "eval:baseline": "node ./src/scripts/ragEval.js --mode=combined --split=full --update-baseline"
   },
   "dependencies": {
     "@langchain/openai": "^1.2.13",

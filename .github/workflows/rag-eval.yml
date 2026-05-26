@@ -1,0 +1,98 @@
+name: Quantitative RAG Eval
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  rag-eval-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run PR eval subset
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
+          OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -z "$OLLAMA_BASE_URL" ]; then
+            echo "Missing eval secrets; skipping quantitative RAG eval for this PR."
+            exit 0
+          fi
+          npm run eval:rag:pr
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-pr
+          path: src/evals/reports/*
+          if-no-files-found: ignore
+
+      - name: Publish metric deltas
+        if: always()
+        run: |
+          node ./src/scripts/publishEvalSummary.js "Quantitative RAG Eval (PR subset)"
+
+  rag-eval-full:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run full eval
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
+          OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -z "$OLLAMA_BASE_URL" ]; then
+            echo "Missing eval secrets; skipping full quantitative RAG eval."
+            exit 0
+          fi
+          npm run eval:rag
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-full
+          path: src/evals/reports/*
+          if-no-files-found: ignore
+
+      - name: Publish metric deltas
+        if: always()
+        run: |
+          node ./src/scripts/publishEvalSummary.js "Quantitative RAG Eval (full)"
